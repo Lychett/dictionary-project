@@ -1,4 +1,5 @@
-(* nei commenti presenti nel programma uso chiave ed etichetta come sinonimi *)
+(* nei commenti presenti nel programma uso chiave ed etichetta 
+   come sinonimi uso un tipo concreto per creare il dizionario *)
 type ide = string;;
 
 type exp = (*tipi di dato*)
@@ -196,16 +197,16 @@ let rec eval (e : exp) (r : evT env) : evT = match e with
 	           | _ -> failwith("non functional value with pars"))				
 	| Letrec(f, i, fBody, letBody) ->
         		let r1 = (bind r f (RecFunVal(f, (i, fBody, r)))) in eval letBody r1 
-    (* primo passo rimuovo le possibile coppie che hanno chiave gia' presente nel dizionario *)
+    	(* primo passo rimuovo le possibile coppie che hanno chiave gia' presente nel dizionario *)
 	| Dict(dict) ->  let thisdict = removeDup dict in 
 	                    let s=" " in
 	                        DictVal(evalDict thisdict s r) 
 	(* aggiunta ad un dizionario: prende un dizionario, una etichetta ed un espressione *)
-    | Insert_Dict(thisdict,lab,valx) ->
+    	| Insert_Dict(thisdict,lab,valx) ->
 		(match (eval thisdict r) with
 			| DictVal(mydict) -> DictVal(insInDict mydict lab valx r)
 			| _ -> failwith("wrong value"))
-    (* rimozione di un elemento dal dizionario *)
+    	(* rimozione di un elemento dal dizionario *)
 	| Delete_Dict(thisdict,lab) ->
 		(match (eval thisdict r) with
 			| DictVal(mydict) -> DictVal(delFromDict mydict lab)
@@ -215,10 +216,16 @@ let rec eval (e : exp) (r : evT env) : evT = match e with
      		(match (eval thisdict r) with
            		| DictVal(d) -> Bool(member d lab)
             		| _ -> failwith("wrong value"))
-    (* applichiamo la funzione funx a tutti i valori del dizionario *)
+    	(* applichiamo la funzione funx a tutti i valori del dizionario *)
 	| Iterate_Dict(funx,thisdict) ->
 		(match (eval thisdict r) with
-			| DictVal(mydict) ->let fVal = eval funx r in DictVal(applyFunDict mydict fVal r)
+			| DictVal(mydict) -> let fVal = eval funx r in 
+						(match fVal with
+					| FunVal(arg, fBody, fDecEnv) -> 
+							DictVal(applyFunDict mydict fVal r)
+					| RecFunVal(g, (arg, fBody, fDecEnv)) ->  (* non valuto il parametro attuale nell'ambiente del chiamante perchè già un evT *)
+							DictVal(applyFunDictRec mydict fVal r)
+					| _ -> failwith("non functional value"))	      
 			| _ -> failwith("wrong value"))
 
 	| Fold_Dict(funx,thisdict) -> setForFold funx thisdict r
@@ -255,20 +262,20 @@ let rec eval (e : exp) (r : evT env) : evT = match e with
 					| (x,y)::xs -> if (lab = x) then (delFromDict xs lab) else (x,y)::(delFromDict xs lab))
 					
 	and applyFunDict (dict : (ide * evT) list) (f : evT) (r : evT env) =
-				(match dict with
-					| [] -> []
-					| (x,y)::xs ->  (x, (dictFunCall f y r))::(applyFunDict xs f r))
+				(match dict,f with
+				| [], _ -> []
+				| (x,y)::xs, FunVal(arg, fBody, fDecEnv) ->  let aEnv = bind fDecEnv arg y in
+										 let evtFun = eval fBody aEnv in
+									             (x, evtFun)::(applyFunDict xs f r))
+										
+	and applyFunDictRec (dict : (ide * evT) list) (f : evT) (r : evT env) =
+				(match dict,f with
+				| [], _ -> []
+				| (x,y)::xs, RecFunVal(g, (arg, fBody, fDecEnv)) ->  let rEnv = (bind fDecEnv g f) in 
+						    					 let aEnv = (bind rEnv arg y) in 
+							    			             let evtRecFun = eval fBody aEnv in
+												 (x, evtRecFun)::(applyFunDictRec xs f r))
 					
-	and dictFunCall (f : evT) (y : evT) (r : evT env) =
-				(match f with
-					| FunVal(arg, fBody, fDecEnv) -> 
-						let aEnv = bind fDecEnv arg y in
-							    eval fBody aEnv
-					| RecFunVal(g, (arg, fBody, fDecEnv)) ->  (* non valuto il parametro attuale nell'ambiente del chiamante perchè già un evT *)
-						let rEnv = (bind fDecEnv g f) in 
-						    let aEnv = (bind rEnv arg y) in 
-							    eval fBody aEnv 
-					| _ -> failwith("non functional value"))
 						
 	and setForFold (funx : exp) (dict : exp) (r : evT env)= 
 	    (match (eval dict r) with 
